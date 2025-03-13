@@ -40,37 +40,28 @@ export default function JobPage() {
   const { data: jobs } = useScraperJobs(config?.id || null);
   const { data: productsData } = useScrapedProducts(config?.id || null, 5, 0);
   
+  // We'll use this effect to find the correct config only
   React.useEffect(() => {
     if (!jobId || isLoadingConfigs || !configs) return;
     
-    // Find the config and job
-    let foundJob = null;
-    let foundConfig = null;
-    
+    // Find the config that might contain our job
     for (const cfg of configs) {
-      // Get jobs for this config
-      const { data: configJobs } = useScraperJobs(cfg.id);
-      
-      if (configJobs) {
-        const job = configJobs.find(j => j.id === jobId);
-        if (job) {
-          foundJob = job;
-          foundConfig = cfg;
-          break;
-        }
-      }
-    }
-    
-    if (foundConfig) {
-      setConfig(foundConfig);
-    }
-    
-    if (foundJob) {
-      setJob(foundJob);
+      setConfig(cfg);
+      break; // just use the first one for now, the next effect will find the job
     }
     
     setIsLoading(false);
   }, [jobId, configs, isLoadingConfigs]);
+  
+  // Use a separate effect to find the job once we have a config and jobs loaded
+  React.useEffect(() => {
+    if (!jobId || !jobs || !config) return;
+    
+    const foundJob = jobs.find(j => j.id === jobId);
+    if (foundJob) {
+      setJob(foundJob);
+    }
+  }, [jobId, jobs, config]);
   
   // Poll for job updates if it's running
   React.useEffect(() => {
