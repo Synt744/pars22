@@ -30,6 +30,7 @@ export const scraperConfigs = pgTable("scraper_configs", {
   useCloudflareBypass: boolean("use_cloudflare_bypass").notNull().default(false),
   useCaptchaHandling: boolean("use_captcha_handling").notNull().default(false),
   proxyUrl: text("proxy_url"),
+  containerSelector: text("container_selector"),
   dateCreated: timestamp("date_created").notNull().defaultNow(),
   lastRun: timestamp("last_run"),
   userId: integer("user_id").references(() => users.id),
