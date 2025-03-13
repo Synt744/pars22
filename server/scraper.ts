@@ -39,6 +39,10 @@ export async function runScraper(config: ScraperConfig, job: ScraperJob, storage
       durationSeconds: result.durationSeconds
     });
     
+    if (!updatedJob) {
+      throw new Error(`Failed to update job with ID: ${job.id}`);
+    }
+    
     if (result.success) {
       console.log(`Scraping completed: ${result.itemsScraped} items scraped in ${result.durationSeconds}s`);
     } else {

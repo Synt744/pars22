@@ -24,8 +24,12 @@ import {
   parseProxyUrl, 
   createProxyConfig
 } from "./proxyService";
-import axios, { AxiosRequestConfig } from 'axios';
+import axios, { AxiosRequestConfig, AxiosResponse } from 'axios';
 import * as cheerio from 'cheerio';
+
+// Определяем типы для cheerio
+type CheerioElement = any;
+type CheerioAPI = ReturnType<typeof cheerio.load>;
 
 export interface ScraperResult {
   success: boolean;
@@ -91,7 +95,7 @@ export class EnhancedWebScraper {
         
         try {
           // Fetch the page content
-          let response;
+          let response: AxiosResponse | null = null;
           let retryCount = 0;
           const maxRetries = 3;
           
@@ -112,6 +116,10 @@ export class EnhancedWebScraper {
               // Wait before retrying
               await new Promise(resolve => setTimeout(resolve, 2000));
             }
+          }
+          
+          if (!response) {
+            throw new Error(`Failed to fetch page ${pageUrl} after ${maxRetries} attempts`);
           }
           
           const html = response.data;
@@ -150,9 +158,11 @@ export class EnhancedWebScraper {
             break;
           }
           
-          // Process each product element
-          productElements.each(async (i, element) => {
+          // Process each product element (use for loop instead of each for async)
+          const productCount = productElements.length;
+          for (let i = 0; i < productCount; i++) {
             try {
+              const element = productElements[i];
               const product = this.extractProductData($, element);
               await storage.createScrapedProduct(product);
               itemsScraped++;
@@ -168,7 +178,7 @@ export class EnhancedWebScraper {
               console.error(`Error processing product ${i+1} on page ${page}:`, error);
               this.warnings.push(`Failed to process product ${i+1} on page ${page}: ${error instanceof Error ? error.message : String(error)}`);
             }
-          });
+          }
           
         } catch (error) {
           console.error(`Error processing page ${page}:`, error);
@@ -281,7 +291,7 @@ export class EnhancedWebScraper {
   /**
    * Extract product data from an element using field selectors
    */
-  private extractProductData($: cheerio.CheerioAPI, element: cheerio.Element): InsertScrapedProduct {
+  private extractProductData($: CheerioAPI, element: CheerioElement): InsertScrapedProduct {
     const productData: InsertScrapedProduct = {
       configId: this.config.id,
       title: "",
@@ -343,8 +353,8 @@ export class EnhancedWebScraper {
             break;
           default:
             // Store additional fields in additionalData
-            if (productData.additionalData) {
-              productData.additionalData[field.name] = value;
+            if (productData.additionalData && typeof productData.additionalData === 'object') {
+              (productData.additionalData as Record<string, string>)[field.name] = value;
             }
         }
       } catch (error) {
@@ -363,7 +373,7 @@ export class EnhancedWebScraper {
   /**
    * Extract a field value from an element using its selector
    */
-  private extractFieldValue($: cheerio.CheerioAPI, element: cheerio.Element, field: DataField): string {
+  private extractFieldValue($: CheerioAPI, element: CheerioElement, field: DataField): string {
     let value = '';
     
     try {

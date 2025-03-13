@@ -57,6 +57,8 @@ export const dataFields = pgTable("data_fields", {
   configId: integer("config_id").notNull().references(() => scraperConfigs.id),
   name: text("name").notNull(),
   selector: text("selector").notNull(),
+  attribute: text("attribute"),
+  regex: text("regex"),
   status: text("status").notNull().default("active"),
   dateCreated: timestamp("date_created").notNull().defaultNow(),
 });
