@@ -68,6 +68,17 @@ export async function runScraper(config: ScraperConfig, job: ScraperJob, storage
       error: errorMessage
     });
     
+    if (!updatedJob) {
+      // Если не удалось обновить задание, создаем базовый объект с минимальной информацией
+      console.error(`Failed to update job ${job.id} with error status, returning original job with error`);
+      return {
+        ...job,
+        status: "failed",
+        endTime,
+        error: errorMessage
+      };
+    }
+    
     return updatedJob;
   }
 }
