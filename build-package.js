@@ -1,100 +1,211 @@
+/**
+ * Скрипт для создания пакетов WebHarvest для различных платформ
+ * 
+ * Использование:
+ * node build-package.js windows
+ * node build-package.js linux
+ * node build-package.js all
+ */
+
 const fs = require('fs');
 const path = require('path');
-const archiver = require('archiver');
 const { execSync } = require('child_process');
 
-// Создаем папку dist, если ее нет
-if (!fs.existsSync('dist')) {
-  fs.mkdirSync('dist');
-}
-
-// Получаем версию из package.json
+// Получаем имя приложения и версию из package.json
 const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-const version = packageJson.version || '1.0.0';
+const appName = packageJson.name;
+const version = packageJson.version;
 
-// Имена архивов
-const windowsArchive = path.join('dist', `webharvest-windows-${version}.zip`);
-const linuxArchive = path.join('dist', `webharvest-linux-${version}.tar.gz`);
+// Список файлов и директорий для включения в пакет
+const filesToInclude = [
+  'client',
+  'server',
+  'shared',
+  '.gitignore',
+  'drizzle.config.ts',
+  'package.json',
+  'package-lock.json',
+  'postcss.config.js',
+  'README.md',
+  'run.js',
+  'tailwind.config.ts',
+  'theme.json',
+  'tsconfig.json',
+  'USER_GUIDE.md',
+  'vite.config.ts',
+  'webharvest.bat',
+  'generated-icon.png'
+];
 
-// Функция создания архива ZIP для Windows
+// Платформо-зависимые файлы
+const windowsFiles = [
+  'install-windows.bat',
+  'start-windows.bat'
+];
+
+const linuxFiles = [
+  'install-linux.sh',
+  'start-linux.sh'
+];
+
+// Создание временной директории для сборки
+function prepareDirectory(targetDir) {
+  if (fs.existsSync(targetDir)) {
+    console.log(`Удаление предыдущей временной директории ${targetDir}...`);
+    try {
+      fs.rmSync(targetDir, { recursive: true, force: true });
+    } catch (err) {
+      console.error(`Ошибка при удалении директории ${targetDir}:`, err);
+      process.exit(1);
+    }
+  }
+  
+  console.log(`Создание временной директории ${targetDir}...`);
+  fs.mkdirSync(targetDir, { recursive: true });
+}
+
+// Копирование файлов в сборочную директорию
+function copyFiles(files, targetDir) {
+  console.log(`Копирование файлов в ${targetDir}...`);
+  
+  files.forEach(file => {
+    const source = path.resolve(file);
+    const destination = path.join(targetDir, file);
+    
+    // Создаем родительскую директорию, если она не существует
+    const destDir = path.dirname(destination);
+    if (!fs.existsSync(destDir)) {
+      fs.mkdirSync(destDir, { recursive: true });
+    }
+    
+    if (fs.existsSync(source)) {
+      // Проверяем, является ли файл директорией
+      if (fs.lstatSync(source).isDirectory()) {
+        // Копируем директорию рекурсивно
+        copyDirectory(source, destination);
+      } else {
+        // Копируем файл
+        fs.copyFileSync(source, destination);
+        console.log(`  Копирован файл: ${file}`);
+      }
+    } else {
+      console.warn(`  Предупреждение: Файл не найден - ${file}`);
+    }
+  });
+}
+
+// Рекурсивное копирование директории
+function copyDirectory(source, destination) {
+  // Создаем целевую директорию, если она не существует
+  if (!fs.existsSync(destination)) {
+    fs.mkdirSync(destination, { recursive: true });
+  }
+  
+  // Получаем все файлы и поддиректории
+  const files = fs.readdirSync(source);
+  
+  // Копируем каждый файл/директорию
+  files.forEach(file => {
+    const sourcePath = path.join(source, file);
+    const destPath = path.join(destination, file);
+    
+    // Пропускаем node_modules и dist
+    if (file === 'node_modules' || file === 'dist') {
+      return;
+    }
+    
+    if (fs.lstatSync(sourcePath).isDirectory()) {
+      // Рекурсивно копируем поддиректорию
+      copyDirectory(sourcePath, destPath);
+    } else {
+      // Копируем файл
+      fs.copyFileSync(sourcePath, destPath);
+    }
+  });
+}
+
+// Создание архива (tar.gz для Linux, zip для Windows)
+function createArchive(sourceDir, outputFile) {
+  console.log(`Создание архива: ${outputFile}`);
+  
+  try {
+    if (outputFile.endsWith('.zip')) {
+      // Для Windows создаем zip архив
+      if (process.platform === 'win32') {
+        // Используем PowerShell в Windows
+        execSync(`powershell.exe -Command "Compress-Archive -Path '${sourceDir}\\*' -DestinationPath '${outputFile}'" -Force`);
+      } else {
+        // Используем zip в Linux/MacOS
+        execSync(`zip -r "${outputFile}" *`, { cwd: sourceDir });
+      }
+    } else if (outputFile.endsWith('.tar.gz')) {
+      // Для Linux создаем tar.gz архив
+      execSync(`tar -czf "${outputFile}" *`, { cwd: sourceDir });
+    }
+    console.log(`Архив успешно создан: ${outputFile}`);
+  } catch (err) {
+    console.error(`Ошибка при создании архива ${outputFile}:`, err);
+    process.exit(1);
+  }
+}
+
+// Функция для создания Windows пакета
 function createWindowsPackage() {
-  console.log('Создание архива для Windows...');
+  console.log('\n=== Создание пакета для Windows ===\n');
   
-  const output = fs.createWriteStream(windowsArchive);
-  const archive = archiver('zip', {
-    zlib: { level: 9 } // Максимальная компрессия
-  });
+  const buildDir = 'dist/package-windows';
+  const outputFile = `dist/${appName}-${version}-windows.zip`;
   
-  output.on('close', () => {
-    console.log(`Архив Windows создан: ${windowsArchive} (${(archive.pointer() / 1024 / 1024).toFixed(2)} МБ)`);
-  });
+  prepareDirectory(buildDir);
+  copyFiles([...filesToInclude, ...windowsFiles], buildDir);
+  createArchive(buildDir, outputFile);
   
-  archive.on('error', (err) => {
-    throw err;
-  });
-  
-  archive.pipe(output);
-  
-  // Добавляем файлы, исключая ненужные
-  archive.glob('**/*', {
-    ignore: [
-      'node_modules/**',
-      'dist/**',
-      '.git/**',
-      '*.tar.gz',
-      '*.zip',
-      'install-linux.sh',
-      'start-linux.sh'
-    ]
-  });
-  
-  archive.finalize();
+  console.log('\n=== Пакет для Windows успешно создан ===\n');
 }
 
-// Функция создания архива TAR.GZ для Linux
+// Функция для создания Linux пакета
 function createLinuxPackage() {
-  console.log('Создание архива для Linux...');
+  console.log('\n=== Создание пакета для Linux ===\n');
   
-  const output = fs.createWriteStream(linuxArchive);
-  const archive = archiver('tar', {
-    gzip: true,
-    gzipOptions: { level: 9 } // Максимальная компрессия
-  });
+  const buildDir = 'dist/package-linux';
+  const outputFile = `dist/${appName}-${version}-linux.tar.gz`;
   
-  output.on('close', () => {
-    console.log(`Архив Linux создан: ${linuxArchive} (${(archive.pointer() / 1024 / 1024).toFixed(2)} МБ)`);
-  });
+  prepareDirectory(buildDir);
+  copyFiles([...filesToInclude, ...linuxFiles], buildDir);
+  createArchive(buildDir, outputFile);
   
-  archive.on('error', (err) => {
-    throw err;
-  });
-  
-  archive.pipe(output);
-  
-  // Добавляем файлы, исключая ненужные
-  archive.glob('**/*', {
-    ignore: [
-      'node_modules/**',
-      'dist/**',
-      '.git/**',
-      '*.tar.gz',
-      '*.zip',
-      'install-windows.bat',
-      'start-windows.bat'
-    ]
-  });
-  
-  archive.finalize();
+  console.log('\n=== Пакет для Linux успешно создан ===\n');
 }
 
-// Устанавливаем зависимость archiver, если ее нет
-try {
-  require.resolve('archiver');
-} catch (e) {
-  console.log('Установка модуля archiver для создания архивов...');
-  execSync('npm install archiver --no-save', { stdio: 'inherit' });
+// Основная функция
+function main() {
+  // Создаем директорию для пакетов, если она не существует
+  if (!fs.existsSync('dist')) {
+    fs.mkdirSync('dist');
+  }
+  
+  // Получаем аргумент командной строки
+  const targetPlatform = process.argv[2] || 'all';
+  
+  switch (targetPlatform.toLowerCase()) {
+    case 'windows':
+      createWindowsPackage();
+      break;
+    case 'linux':
+      createLinuxPackage();
+      break;
+    case 'all':
+      createWindowsPackage();
+      createLinuxPackage();
+      break;
+    default:
+      console.error(`Неизвестная платформа: ${targetPlatform}`);
+      console.log('Использование: node build-package.js [windows|linux|all]');
+      process.exit(1);
+  }
+  
+  console.log(`\nГотово! Пакеты созданы в директории 'dist/'`);
 }
 
-// Создаем оба архива
-createWindowsPackage();
-createLinuxPackage();
+// Запуск скрипта
+main();
